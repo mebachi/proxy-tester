@@ -19,6 +19,7 @@ let proxies = [];
 let chunks = [];
 let chunksCompleted = 0;
 const times = {};
+var finishedList = [];
 
 // Jetty Colors
 const colors = {
@@ -94,11 +95,14 @@ const getTimeStyle = (time) => {
 };
 
 const getMessageStyle = (message) => {
-  if (message.includes('200')) return styles.good;
+  if (typeof message == 'string' && message.indexOf('200') > -1) {
+
+    return styles.good;
+  }
   return styles.bad;
 };
 
-const updateLine = (index, proxy, message, time = false) => {
+const updateLine = (index, proxy, message, time = false, unchangedProxy) => {
   let p = proxy.replace('http://', '');
   if (p.includes('@')) [, p] = p.split('@');
   const i = `000${chunksCompleted * limit + index}`.slice(-4);
@@ -115,6 +119,10 @@ const updateLine = (index, proxy, message, time = false) => {
       .text(' ')
       .text(` ${message} `, messageStyle)
       .text('\n');
+
+    if(timeStyle == styles.good && messageStyle == styles.good) {
+      finishedList.push(unchangedProxy);
+    }
   } else {
     tty
       .moveTo([index - 1, 0])
@@ -152,7 +160,7 @@ const blowChunks = () => {
 };
 
 // Test a proxy
-const test = async (index, proxy) => {
+const test = async (index, proxy, unchangedProxy) => {
   updateLine(index, proxy, 'Running...');
   times[index] = new Date().getTime();
 
@@ -164,7 +172,7 @@ const test = async (index, proxy) => {
     const now = new Date().getTime();
     const time = now - times[index];
 
-    updateLine(index, proxy, response.statusCode.toString(), time);
+    updateLine(index, proxy, response.statusCode.toString(), time, unchangedProxy);
   } catch (e) {
     completed += 1;
 
@@ -181,13 +189,14 @@ const run = async () => {
   for (let i = 0; i < proxies.length; i += 1) {
     const p = proxies[i];
     let proxy = `${p.ip}:${p.port}`;
+    let unchangedProxy = `${p.ip}:${p.port}:${p.user}:${p.pass}`;
     if (p.user) proxy = `${p.user}:${p.pass}@${proxy}`;
     proxy = `http://${proxy}`;
 
     const index = i + 1;
 
     setTimeout(() => { // eslint-disable-line
-      test(index, proxy);
+      test(index, proxy, unchangedProxy);
     }, index * delay);
   }
 };
@@ -213,7 +222,10 @@ const interval = setInterval(() => {
     }
 
     tty.moveTo([proxies.length + 1, 0]);
-    console.log('============ DONE! ============');
+    fs.writeFile('cleanProxies.txt', `${finishedList.join('\n')}`, (err) => {
+      if (err) throw err;
+    });
+    console.log('============ DONE! CHECK cleanProxies.txt! ============');
     clearInterval(interval);
   } else {
     // console.log('not done');
